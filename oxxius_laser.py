@@ -186,7 +186,7 @@ class OxxiusLaser:
         return reply.lstrip(f"?{setting}= ")
 
     def set(self, cmd: Cmd, value: str) -> str:
-        return self._send(f"{cmd}={value}")
+        return self._send(f"{cmd} {value}")
 
     def _send(self, msg: str, raise_timeout: bool = True) -> str:
         """send a message and return the reply.
@@ -210,9 +210,115 @@ class OxxiusLaser:
         if not len(reply) and raise_timeout and \
                 perf_counter() - start_time > self.ser.timeout:
             raise SerialTimeoutException
-        start_time = perf_counter()  # Reset timeout counter.
-        # Read the message and the last '\r\n'.
+        return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
+
+
+"""Class for 638 Laser"""
+
+
+class L1Laser(OxxiusLaser):
+    def _send(self, msg: str, raise_timeout: bool = True) -> str:
+        """send a message and return the reply.
+        :param msg: the message to send in string format
+        :param raise_timeout: bool to indicate if we should raise an exception
+            if we timed out.
+        :returns: the reply (without line formatting chars) in str format
+            or emptystring if no reply. Raises a timeout exception if flagged
+            to do so.
+        """
+        # Note: Timing out on a serial port read does not throw an exception,
+        #   so we need to do this manually.
+
+        # All outgoing commands are bookended with a '\r\n' at end of the message.
+        self.ser.write(f"L1 {msg}\r".encode('ascii'))
+        start_time = perf_counter()
+        # Read the first '\r\n'.
         reply = self.ser.read_until(OxxiusLaser.REPLY_TERMINATION)
+        # Raise a timeout if we got no reply and have been flagged to do so.
+        if not len(reply) and raise_timeout and \
+                perf_counter() - start_time > self.ser.timeout:
+            raise SerialTimeoutException
+        return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
+
+
+"""Class for 561 Laser"""
+
+
+class L3Laser(OxxiusLaser):
+    def _send(self, msg: str, raise_timeout: bool = True) -> str:
+        """send a message and return the reply.
+        :param msg: the message to send in string format
+        :param raise_timeout: bool to indicate if we should raise an exception
+            if we timed out.
+        :returns: the reply (without line formatting chars) in str format
+            or emptystring if no reply. Raises a timeout exception if flagged
+            to do so.
+        """
+        # Note: Timing out on a serial port read does not throw an exception,
+        #   so we need to do this manually.
+
+        # All outgoing commands are bookended with a '\r\n' at end of the message.
+        self.ser.write(f"L3 {msg}\r".encode('ascii'))
+        start_time = perf_counter()
+        # Read the first '\r\n'.
+        reply = self.ser.read_until(OxxiusLaser.REPLY_TERMINATION)
+        # Raise a timeout if we got no reply and have been flagged to do so.
+        if not len(reply) and raise_timeout and \
+                perf_counter() - start_time > self.ser.timeout:
+            raise SerialTimeoutException
+        return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
+
+
+"""Class for 488 Laser"""
+
+
+class L5Laser(OxxiusLaser):
+    def _send(self, msg: str, raise_timeout: bool = True) -> str:
+        """send a message and return the reply.
+        :param msg: the message to send in string format
+        :param raise_timeout: bool to indicate if we should raise an exception
+            if we timed out.
+        :returns: the reply (without line formatting chars) in str format
+            or emptystring if no reply. Raises a timeout exception if flagged
+            to do so.
+        """
+        # Note: Timing out on a serial port read does not throw an exception,
+        #   so we need to do this manually.
+
+        # All outgoing commands are bookended with a '\r\n' at end of the message.
+        self.ser.write(f"L5 {msg}\r".encode('ascii'))
+        start_time = perf_counter()
+        # Read the first '\r\n'.
+        reply = self.ser.read_until(OxxiusLaser.REPLY_TERMINATION)
+        # Raise a timeout if we got no reply and have been flagged to do so.
+        if not len(reply) and raise_timeout and \
+                perf_counter() - start_time > self.ser.timeout:
+            raise SerialTimeoutException
+        return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
+
+
+"""Class for 405 Laser"""
+
+
+class L6Laser(OxxiusLaser):
+    def _send(self, msg: str, raise_timeout: bool = True) -> str:
+        """send a message and return the reply.
+        :param msg: the message to send in string format
+        :param raise_timeout: bool to indicate if we should raise an exception
+            if we timed out.
+        :returns: the reply (without line formatting chars) in str format
+            or emptystring if no reply. Raises a timeout exception if flagged
+            to do so.
+        """
+        # Note: Timing out on a serial port read does not throw an exception,
+        #   so we need to do this manually.
+
+        # All outgoing commands are bookended with a '\r\n' at end of the message.
+        self.ser.write(f"L6 {msg}\r".encode('ascii'))
+        start_time = perf_counter()
+        # Read the first '\r\n'.
+        reply = self.ser.read_until(OxxiusLaser.REPLY_TERMINATION)
+        # Raise a timeout if we got no reply and have been flagged to do so.
         if not len(reply) and raise_timeout and \
                 perf_counter() - start_time > self.ser.timeout:
             raise SerialTimeoutException
