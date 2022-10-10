@@ -5,13 +5,9 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "oxxius_laser"
 authors = [{name = "Micah Woodard", email = "micah.woodard@alleninstitute.org"}]
-requires-python='>=3.6'
-dynamic = ["version", "description"]
-classifiers=[
-    'License :: OSI Approved :: MIT License',
-    'Development Status :: 4 - Beta',
-    'Programming Language :: Python'
-]
+version = "1.1.1"
+dynamic = ["description"]
+description-file='README.md'
 dependencies = [
     'pyserial'
 ]
