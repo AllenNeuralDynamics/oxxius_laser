@@ -1,0 +1,17 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "oxxius_laser"
+authors = [{name = "Micah Woodard", email = "micah.woodard@alleninstitute.org"}]
+requires-python='>=3.6'
+dynamic = ["version", "description"]
+classifiers=[
+    'License :: OSI Approved :: MIT License',
+    'Development Status :: 4 - Beta',
+    'Programming Language :: Python'
+]
+dependencies = [
+    'pyserial'
+]
