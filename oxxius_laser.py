@@ -19,7 +19,7 @@ class Cmd(StrEnum):
     LaserDriverControlMode = "ACC"  # Set laser mode: [Power=0, Current=1]
     ExternalPowerControl = "AM"  # Enable(1)/Disable(0) External power control
     LaserEmission = "L"  # Enable/Disable Laser Emission. Or DL?
-    LaserCurrent = "CM"  # Set laser current ## [%] or C? C saves to memory
+    LaserCurrent = "CM"  # Set laser current ##.# [mA] or C? C saves to memory
     LaserPower = "PM"  # Set laser power ###.# [mW] Or PM?
     FiveSecEmissionDelay = "CDRH"  # Enable/Disable 5-second CDRH delay
     FaultCodeReset = "RST"  # Clears all fault codes or resets the laser unit (0)
@@ -27,6 +27,7 @@ class Cmd(StrEnum):
 
 
 class Query(StrEnum):
+    LaserDriverControlMode = "?ACC" #Request laser control mode
     FaultCode = "?F"  # Request fault code
     ExternalPowerControl = "?AM"  # Request external power control
     BasePlateTemperature = "?BT"
@@ -91,17 +92,17 @@ OXXIUS_COM_SETUP = \
 class OxxiusLaser:
     REPLY_TERMINATION = b'\r\n'
 
-    def __init__(self, port: str = "COM7"):
-        self.ser = Serial(port, **OXXIUS_COM_SETUP)
+    def __init__(self, prefix, ser : Serial):
+        self.ser = ser
         self.ser.reset_input_buffer()
         # Since we're likely connected over an RS232-to-usb-serial interface,
         # ask for some sort of reply to make sure we're not timing out.
-        try:
-            # Put the interface into a known state to simplify communication.
-            self.temperature()
-        except SerialTimeoutException:
-            print(f"Connected to '{port}' but the device is not responding.")
-            raise
+        # try:
+        #     # Put the interface into a known state to simplify communication.
+        #     self.temperature()
+        # except SerialTimeoutException:
+        #     print(f"Connected to '{self.ser.port}' but the device is not responding.")
+        #     raise
 
     # Convenience functions
     def enable(self):
@@ -202,6 +203,7 @@ class OxxiusLaser:
 
         # All outgoing commands are bookended with a '\r\n' at the beginning
         # and end of the message.
+
         self.ser.write(f"{msg}\r".encode('ascii'))
         start_time = perf_counter()
         # Read the first '\r\n'.
@@ -210,5 +212,6 @@ class OxxiusLaser:
         if not len(reply) and raise_timeout and \
                 perf_counter() - start_time > self.ser.timeout:
             raise SerialTimeoutException
+
         return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
 
