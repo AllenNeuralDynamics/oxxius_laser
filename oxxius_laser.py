@@ -20,10 +20,11 @@ class Cmd(StrEnum):
     ExternalPowerControl = "AM"  # Enable(1)/Disable(0) External power control
     LaserEmission = "L"  # Enable/Disable Laser Emission. Or DL?
     LaserCurrent = "CM"  # Set laser current ##.# [mA] or C? C saves to memory
-    LaserPower = "PM"  # Set laser power ###.# [mW] Or PM?
+    LaserPower = "P"  # Set laser power ###.# [mW] Or PM?
     FiveSecEmissionDelay = "CDRH"  # Enable/Disable 5-second CDRH delay
     FaultCodeReset = "RST"  # Clears all fault codes or resets the laser unit (0)
     TemperatureRegulationLoop = "T"  # Set Temperature Regulation Loop
+    PercentageSplit = "IPA"     #Set % split between lasers
 
 
 class Query(StrEnum):
@@ -42,7 +43,7 @@ class Query(StrEnum):
     LaserCurrentSetting = "?SC"  # Request desired laser current setpoint
     MaximumLaserCurrent = "?MAXLC"  # Request maximum laser current.
     InterlockStatus = "?INT"  # Request interlock status
-    LaserVoltage = "?IV"  # Request measured laser current
+    LaserVoltage = "?IV"  # Request measured laser voltage
     TemperatureRegulationLoopStatus = "?T"  # Request Temperature Regulation Loop status
 
 
@@ -97,13 +98,12 @@ class OxxiusLaser:
         self.ser.reset_input_buffer()
         # Since we're likely connected over an RS232-to-usb-serial interface,
         # ask for some sort of reply to make sure we're not timing out.
-        # try:
-        #     # Put the interface into a known state to simplify communication.
-        #     self.temperature()
-        # except SerialTimeoutException:
-        #     print(f"Connected to '{self.ser.port}' but the device is not responding.")
-        #     raise
-
+        try:
+            # Put the interface into a known state to simplify communication.
+            self.get(Query.LaserCurrent)
+        except SerialTimeoutException:
+            print(f"Connected to '{self.ser.port}' but the device is not responding.")
+            raise
     # Convenience functions
     def enable(self):
         """Enable emission."""
@@ -184,7 +184,7 @@ class OxxiusLaser:
     def get(self, setting: Query) -> str:
         """Request a setting from the device."""
         reply = self._send(setting.value)
-        return reply.lstrip(f"?{setting}= ")
+        return reply
 
     def set(self, cmd: Cmd, value: str) -> str:
         return self._send(f"{cmd} {value}")
@@ -212,6 +212,6 @@ class OxxiusLaser:
         if not len(reply) and raise_timeout and \
                 perf_counter() - start_time > self.ser.timeout:
             raise SerialTimeoutException
-
+        print(msg, ': ', reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8'))
         return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
 
