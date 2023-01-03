@@ -45,7 +45,7 @@ class Query(StrEnum):
     InterlockStatus = "?INT"  # Request interlock status
     LaserVoltage = "?IV"  # Request measured laser voltage
     TemperatureRegulationLoopStatus = "?T"  # Request Temperature Regulation Loop status
-
+    PercentageSplitStatus = "?IPA"
 
 # Requesting a FaultCode will return a 16-bit number who's bitfields
 # represent which faults are active.
