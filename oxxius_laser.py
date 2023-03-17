@@ -25,6 +25,7 @@ class Cmd(StrEnum):
     FaultCodeReset = "RST"  # Clears all fault codes or resets the laser unit (0)
     TemperatureRegulationLoop = "T"  # Set Temperature Regulation Loop
     PercentageSplit = "IPA"     #Set % split between lasers
+    DigitalModulation = "TTL"   #Sets the digital high-speed modulation
 
 
 class Query(StrEnum):
@@ -34,7 +35,7 @@ class Query(StrEnum):
     BasePlateTemperature = "?BT"
     FiveSecEmissionDelay = "?CDRH"  # Request 5-second CDRH Delay status
     LaserOperatingHours = "?HH"  # Request laser operating hours.
-    LaserIdentification = "INF?"  # Request Laser type.
+    LaserIdentification = "?HID"  # Request Laser type.
     LaserEmission = "?L"  # Request laser emission status.
     LaserPower = "?P"  # Request measured laser power.
     LaserPowerSetting = "?SP"  # Request desired laser power setpoint.
@@ -212,6 +213,5 @@ class OxxiusLaser:
         if not len(reply) and raise_timeout and \
                 perf_counter() - start_time > self.ser.timeout:
             raise SerialTimeoutException
-        print(msg, ': ', reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8'))
         return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
 
