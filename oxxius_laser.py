@@ -94,8 +94,9 @@ OXXIUS_COM_SETUP = \
 class OxxiusLaser:
     REPLY_TERMINATION = b'\r\n'
 
-    def __init__(self, prefix, ser : Serial):
+    def __init__(self, ser : Serial, prefix = None):
         self.ser = ser
+        self.prefix = prefix
         self.ser.reset_input_buffer()
         # Since we're likely connected over an RS232-to-usb-serial interface,
         # ask for some sort of reply to make sure we're not timing out.
@@ -204,8 +205,8 @@ class OxxiusLaser:
 
         # All outgoing commands are bookended with a '\r\n' at the beginning
         # and end of the message.
-
-        self.ser.write(f"{msg}\r".encode('ascii'))
+        prefix_msg = f'{self.prefix} {msg}\r' if self.prefix != None else f'{msg}\r'
+        self.ser.write(prefix_msg.encode('ascii'))
         start_time = perf_counter()
         # Read the first '\r\n'.
         reply = self.ser.read_until(OxxiusLaser.REPLY_TERMINATION)
