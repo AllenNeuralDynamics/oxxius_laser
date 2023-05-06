@@ -94,7 +94,7 @@ OXXIUS_COM_SETUP = \
 class OxxiusLaser:
     REPLY_TERMINATION = b'\r\n'
 
-    def __init__(self, ser : Serial, prefix = None):
+    def __init__(self, prefix = None):
         self.ser = ser
         self.prefix = prefix
         self.ser.reset_input_buffer()
@@ -120,6 +120,53 @@ class OxxiusLaser:
     # def wavelength(self):
     #     """return the current wavelength."""
     #     return int(self.get(Query.LaserWavelength))
+
+    def get_power(self):
+        """Return setpoint power of laser"""
+
+        return self.get(Query.LaserPowerSetting)
+
+    def set_power(self, value):
+        """Set power of laser"""
+
+        self.set(Cmd.LaserPower, value)
+
+    def get_current(self):
+        """Return setpoint power of laser"""
+
+        return self.get(Query.LaserCurrentSetting)
+
+    def set_current(self, value):
+        """Set power of laser"""
+
+        self.set(Cmd.LaserCurrent, value)
+
+
+    def set_modulation_mode(self, mode):
+        """Set modulation mode: digital or modulation"""
+
+        if mode == 'digital':
+            self.set(Cmd.DigitalModulation, 1)
+        else:
+            self.set(Cmd.DigitalModulation, 0)
+
+    def set_external_control(self, set: bool):
+        """Set exteranal control on or off"""
+
+        if set:
+            self.set(Cmd.ExternalPowerControl, 0)
+        else:
+            self.set(Cmd.ExternalPowerControl, 1)
+
+    def set_constant_current_mode(self):
+        """Set constant current mode"""
+
+        self.set(Cmd.LaserDriverControlMode, 1)
+
+    def set_constant_power_mode(self):
+        """Set constant current mode"""
+
+        self.set(Cmd.LaserDriverControlMode, 0)
 
     @property
     def temperature(self):
@@ -188,7 +235,7 @@ class OxxiusLaser:
         reply = self._send(setting.value)
         return reply
 
-    def set(self, cmd: Cmd, value: str) -> str:
+    def set(self, cmd: Cmd, value) -> str:
         return self._send(f"{cmd} {value}")
 
     def _send(self, msg: str, raise_timeout: bool = True) -> str:
@@ -215,4 +262,14 @@ class OxxiusLaser:
                 perf_counter() - start_time > self.ser.timeout:
             raise SerialTimeoutException
         return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
+
+
+class Splitter(OxxiusLaser):
+
+    def __init__(self, port):
+
+        global ser      # Global serial port that oxxius class can use
+        ser = Serial(port=port, **OXXIUS_COM_SETUP)
+        super().__init__()
+
 
