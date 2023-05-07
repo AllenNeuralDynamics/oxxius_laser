@@ -158,6 +158,11 @@ class OxxiusLaser:
         else:
             self.set(Cmd.ExternalPowerControl, 1)
 
+    def get_max_power(self):
+        """Get max power"""
+
+        return self.get(Query.MaximumLaserPower)
+
     def set_constant_current_mode(self):
         """Set constant current mode"""
 
@@ -271,5 +276,16 @@ class Splitter(OxxiusLaser):
         global ser      # Global serial port that oxxius class can use
         ser = Serial(port=port, **OXXIUS_COM_SETUP)
         super().__init__()
+
+    def get_percentage_split(self):
+        """Get percentage split of lasers"""
+
+        return self.get(Query.PercentageSplitStatus)
+
+    def set_percentage_spilt(self, value):
+        """Set percentage split of lasers"""
+
+        self.set(Cmd.PercentageSplit, value)
+
 
 
