@@ -163,15 +163,13 @@ class OxxiusLaser:
 
         return self.get(Query.MaximumLaserPower)
 
-    def set_constant_current_mode(self):
-        """Set constant current mode"""
+    def set_laser_driver_control_mode(self, mode):
+        """Set constant current or power mode"""
 
-        self.set(Cmd.LaserDriverControlMode, 1)
-
-    def set_constant_power_mode(self):
-        """Set constant current mode"""
-
-        self.set(Cmd.LaserDriverControlMode, 0)
+        if mode == 'current':
+            self.set(Cmd.LaserDriverControlMode, 1)
+        elif mode == 'power':
+            self.set(Cmd.LaserDriverControlMode, 0)
 
     @property
     def temperature(self):
