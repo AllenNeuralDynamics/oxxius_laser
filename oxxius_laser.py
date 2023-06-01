@@ -24,12 +24,12 @@ class Cmd(StrEnum):
     FiveSecEmissionDelay = "CDRH"  # Enable/Disable 5-second CDRH delay
     FaultCodeReset = "RST"  # Clears all fault codes or resets the laser unit (0)
     TemperatureRegulationLoop = "T"  # Set Temperature Regulation Loop
-    PercentageSplit = "IPA"     #Set % split between lasers
-    DigitalModulation = "TTL"   #Sets the digital high-speed modulation
+    PercentageSplit = "IPA"  # Set % split between lasers
+    DigitalModulation = "TTL"  # Sets the digital high-speed modulation
 
 
 class Query(StrEnum):
-    LaserDriverControlMode = "?ACC" #Request laser control mode
+    LaserDriverControlMode = "?ACC"  # Request laser control mode
     FaultCode = "?F"  # Request fault code
     ExternalPowerControl = "?AM"  # Request external power control
     BasePlateTemperature = "?BT"
@@ -47,6 +47,7 @@ class Query(StrEnum):
     LaserVoltage = "?IV"  # Request measured laser voltage
     TemperatureRegulationLoopStatus = "?T"  # Request Temperature Regulation Loop status
     PercentageSplitStatus = "?IPA"
+
 
 # Requesting a FaultCode will return a 16-bit number who's bitfields
 # represent which faults are active.
@@ -94,9 +95,15 @@ OXXIUS_COM_SETUP = \
 class OxxiusLaser:
     REPLY_TERMINATION = b'\r\n'
 
-    def __init__(self, ser : Serial, prefix = None):
+    def __init__(self, prefix=None,
+                 intensity_mode = 'current',
+                 modulation_mode: str = None,
+                 laser_driver_control_mode: str = None,
+                 external_control: str = None
+                 ):
         self.ser = ser
         self.prefix = prefix
+        self.intensity_mode = intensity_mode
         self.ser.reset_input_buffer()
         # Since we're likely connected over an RS232-to-usb-serial interface,
         # ask for some sort of reply to make sure we're not timing out.
@@ -106,6 +113,13 @@ class OxxiusLaser:
         except SerialTimeoutException:
             print(f"Connected to '{self.ser.port}' but the device is not responding.")
             raise
+
+        # Setup based on the kwds passed in
+        if modulation_mode != None: self.set_modulation_mode(modulation_mode)
+        if laser_driver_control_mode != None: self.set_laser_driver_control_mode(laser_driver_control_mode)
+        if external_control != None: self.set_external_control(external_control)
+
+
     # Convenience functions
     def enable(self):
         """Enable emission."""
@@ -153,12 +167,15 @@ class OxxiusLaser:
         """disable 5-second delay"""
         self.set(Cmd.FiveSecEmissionDelay, BoolVal.OFF)
 
-    def set_external_power_control(self):
+    def set_external_control(self, state:bool):
         """Configure the laser to be controlled by an external analog input.
         0 to max output power is linearlly mapped to an analog voltage of 0-5V
         where any present power is ignored (datasheet, pg67).
         """
-        self.set(Cmd.ExternalPowerControl, BoolVal.ON)
+        if state:
+            self.set(Cmd.ExternalPowerControl, BoolVal.ON)
+        else:
+            self.set(Cmd.ExternalPowerControl, BoolVal.OFF)
 
     def get_faults(self):
         """return a list of faults or empty list if no faults are present."""
@@ -175,6 +192,52 @@ class OxxiusLaser:
                 faults.append(field)
             fault_code = fault_code >> 1
             return faults
+
+    def set_setpoint(self, value):
+
+        """Set power of laser"""
+        if self.intensity_mode == 'power':
+            self.set(Cmd.LaserPower, value)
+
+        elif self.intensity_mode == 'current':
+            self.set(Cmd.LaserCurrent, value)
+
+    def get_setpoint(self):
+
+        """Get power of laser"""
+
+        if self.intensity_mode == 'power':
+            return self.get(Query.LaserPowerSetting)
+
+        elif self.intensity_mode == 'current':
+            return self.get(Query.LaserCurrentSetting)
+
+    def set_modulation_mode(self, mode):
+
+        """Set laser in digital or analog mode"""
+
+        if mode == 'DigitalModulation':
+            self.set(Cmd.DigitalModulation, 1)
+        else:
+            self.set(Cmd.DigitalModulation, 0)
+
+    def set_laser_driver_control_mode(self, mode):
+
+        """ Set in constant current mode or constant power mode """
+        if mode == 'current':
+            self.set(Cmd.LaserDriverControlMode, 1)
+        elif mode == 'power':
+            self.set(Cmd.LaserDriverControlMode, 0)
+
+    def get_max_setpoint(self):
+        """Returns maximum laser power"""
+
+        if self.intensity_mode == 'power':
+            return self.get(Query.MaximumLaserPower)
+
+        elif self.intensity_mode == 'current':
+            return 100
+
 
     def reset_laser(self):
         """Resets the laser unit"""
@@ -216,3 +279,16 @@ class OxxiusLaser:
             raise SerialTimeoutException
         return reply.rstrip(OxxiusLaser.REPLY_TERMINATION).decode('utf-8')
 
+
+class Splitter(OxxiusLaser):
+
+    def __init__(self, port):
+        global ser
+        ser = Serial(port=port, **OXXIUS_COM_SETUP)
+        super().__init__(prefix=None)
+
+    def set_percentage_split(self, value):
+        self.set(Cmd.PercentageSplit, value)
+
+    def get_percentage_split(self):
+        return self.get(Query.PercentageSplitStatus)
