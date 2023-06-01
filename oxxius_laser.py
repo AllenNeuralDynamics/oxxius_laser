@@ -48,7 +48,6 @@ class Query(StrEnum):
     TemperatureRegulationLoopStatus = "?T"  # Request Temperature Regulation Loop status
     PercentageSplitStatus = "?IPA"
 
-
 # Requesting a FaultCode will return a 16-bit number who's bitfields
 # represent which faults are active.
 # Many fields (bits) can be asserted at once.
@@ -251,7 +250,7 @@ class OxxiusLaser:
         reply = self._send(setting.value)
         return reply
 
-    def set(self, cmd: Cmd, value: str) -> str:
+    def set(self, cmd: Cmd, value) -> str:
         return self._send(f"{cmd} {value}")
 
     def _send(self, msg: str, raise_timeout: bool = True) -> str:
@@ -284,11 +283,17 @@ class Splitter(OxxiusLaser):
 
     def __init__(self, port):
         global ser
-        ser = Serial(port=port, **OXXIUS_COM_SETUP)
+        ser = Serial(port=port, **OXXIUS_COM_SETUP) # Global serial port that oxxius class can use
         super().__init__(prefix=None)
 
     def set_percentage_split(self, value):
+        """Set percentage split of lasers"""
+
         self.set(Cmd.PercentageSplit, value)
 
     def get_percentage_split(self):
+        """Get percentage split of lasers"""
+
         return self.get(Query.PercentageSplitStatus)
+
+
