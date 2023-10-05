@@ -1,0 +1,6 @@
+Metadata-Version: 2.1
+Name: oxxius_laser
+Version: 1.1.1
+Summary: Oxxius Laser Driver.
+Author-email: Micah Woodard <micah.woodard@alleninstitute.org>
+Requires-Dist: pyserial

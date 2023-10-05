@@ -6,6 +6,7 @@ from functools import cache
 from time import perf_counter
 from serial import Serial, EIGHTBITS, STOPBITS_ONE, PARITY_NONE, \
     SerialTimeoutException
+import serial
 
 # Define StrEnums if they don't yet exist.
 if sys.version_info < (3, 11):
@@ -94,14 +95,17 @@ OXXIUS_COM_SETUP = \
 class OxxiusLaser:
     REPLY_TERMINATION = b'\r\n'
 
-    def __init__(self, prefix=None,
+    def __init__(self,
+                 port,
+                 prefix=None,
                  intensity_mode = 'current',
                  modulation_mode: str = None,
                  laser_driver_control_mode: str = None,
                  external_control: str = None
                  ):
-        self.ser = ser
+
         self.prefix = prefix
+        self.ser = Serial(port, **OXXIUS_COM_SETUP) if type(port) != Serial else port
         self.intensity_mode = intensity_mode
         self.ser.reset_input_buffer()
         # Since we're likely connected over an RS232-to-usb-serial interface,
@@ -204,7 +208,6 @@ class OxxiusLaser:
     def get_setpoint(self):
 
         """Get power of laser"""
-
         if self.intensity_mode == 'power':
             return self.get(Query.LaserPowerSetting)
 
@@ -280,11 +283,6 @@ class OxxiusLaser:
 
 
 class Splitter(OxxiusLaser):
-
-    def __init__(self, port):
-        global ser
-        ser = Serial(port=port, **OXXIUS_COM_SETUP) # Global serial port that oxxius class can use
-        super().__init__(prefix=None)
 
     def set_percentage_split(self, value):
         """Set percentage split of lasers"""
