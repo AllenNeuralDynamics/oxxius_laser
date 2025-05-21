@@ -727,7 +727,7 @@ class LBX(OxxiusController):
         """
         self.set(self.prefix, Cmd.LaserDriverControlMode, status)
 
-    def digital_modualtion(self, prefix: str) -> BoolVal:
+    def digital_modulation(self, prefix: str) -> BoolVal:
         """
         Get the digital modulation status for a given prefix.
 
