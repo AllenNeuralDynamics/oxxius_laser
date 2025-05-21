@@ -1,21 +1,19 @@
-"""Oxxius Laser Driver."""
-
+import logging
 import sys
 from enum import Enum, IntEnum
-from functools import cache
 from time import perf_counter
-from serial import Serial, EIGHTBITS, STOPBITS_ONE, PARITY_NONE, \
-    SerialTimeoutException
-import serial
-import logging
+
+from serial import (EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial,
+                    SerialTimeoutException)
 
 # Define StrEnums if they don't yet exist.
 if sys.version_info < (3, 11):
+
     class StrEnum(str, Enum):
         pass
+
 else:
     from enum import StrEnum
-
 
 
 class Cmd(StrEnum):
@@ -39,7 +37,7 @@ class Query(StrEnum):
     LaserDriverControlMode = "?ACC"  # Request laser control mode
     FaultCode = "?F"  # Request fault code
     ExternalPowerControl = "?AM"  # Request external power control
-    BasePlateTemperature = "?BT"    # Request baseplate temp
+    BasePlateTemperature = "?BT"  # Request baseplate temp
     FiveSecEmissionDelay = "?CDRH"  # Request 5-second CDRH Delay status
     LaserOperatingHours = "?HH"  # Request laser operating hours.
     LaserIdentification = "?HID"  # Request Laser type.
@@ -55,381 +53,726 @@ class Query(StrEnum):
     TemperatureRegulationLoopStatus = "?T"  # Request Temperature Regulation Loop status
     PercentageSplitStatus = "?IPA"
 
+
 class FaultCodeField(IntEnum):
-    NO_ALARM = 0,
-    DIODE_CURRENT = 1,
-    LASER_POWER = 2,
-    POWER_SUPPLY = 3,
-    DIODE_TEMPERATURE = 4,
-    BASE_TEMPERATURE = 5,
+    NO_ALARM = (0,)
+    DIODE_CURRENT = (1,)
+    LASER_POWER = (2,)
+    POWER_SUPPLY = (3,)
+    DIODE_TEMPERATURE = (4,)
+    BASE_TEMPERATURE = (5,)
     INTERLOCK = 7
 
 
 # Laser State Representation
 class OxxiusState(IntEnum):
-    WARMUP = 0,
-    STANDBY = 2,
-    LASER_EMISSION_ACTIVE = 3,
-    INTERNAL_ERROR = 4,
-    FAULT = 5,
+    WARMUP = (0,)
+    STANDBY = (2,)
+    LASER_EMISSION_ACTIVE = (3,)
+    INTERNAL_ERROR = (4,)
+    FAULT = (5,)
     SLEEP = 6
+
 
 class OxxiusUSBConfiguration(IntEnum):
     STANDARD_USB = 0
     VIRTUAL_SERIAL_PORT = 1
+
 
 # Boolean command value that can also be compared like a boolean.
 class BoolVal(StrEnum):
     OFF = "0"
     ON = "1"
 
-OXXIUS_COM_SETUP = \
-    {
-        "baudrate": 9600,
-        "bytesize": EIGHTBITS,
-        "parity": PARITY_NONE,
-        "stopbits": STOPBITS_ONE,
-        "xonxoff": False,
-        "timeout": 1
-    }
 
-REPLY_TERMINATION = b'\r\n'
+OXXIUS_COM_SETUP = {
+    "baudrate": 9600,
+    "bytesize": EIGHTBITS,
+    "parity": PARITY_NONE,
+    "stopbits": STOPBITS_ONE,
+    "xonxoff": False,
+    "timeout": 1,
+}
 
-class OxxiusLaser:
+REPLY_TERMINATION = b"\r\n"
 
-    def __init__(self, port, prefix=None):
-        """Generic class for lasers L6CC combiner, LBX, and LCX"""
 
-        self.prefix = f'{prefix} ' if prefix is not None else ''
+class OxxiusController:
+
+    def __init__(self, port: str | Serial):
+        """
+        Initialize the OxxiusController.
+
+        :param port: Serial port name or Serial object.
+        :type port: str or Serial
+        :raises SerialTimeoutException: If the device does not respond.
+        """
         self.ser = Serial(port, **OXXIUS_COM_SETUP) if type(port) != Serial else port
         self.ser.reset_input_buffer()
-        # Since we're likely connected over an RS232-to-usb-serial interface,
-        # ask for some sort of reply to make sure we're not timing out.
         try:
-            # Put the interface into a known state to simplify communication.
             self.get(Query.LaserCurrent)
         except SerialTimeoutException:
             print(f"Connected to '{self.ser.port}' but the device is not responding.")
             raise
 
     @property
-    def temperature(self):
-         """Return temperature of baseplate"""
-         return self.get(Query.BasePlateTemperature)
+    def temperature(self) -> str:
+        """
+        Get the base plate temperature.
+
+        :return: Base plate temperature.
+        :rtype: str
+        """
+        return self.get(Query.BasePlateTemperature)
 
     @property
-    def faults(self):
-        """return a list of faults or empty list if no faults are present."""
+    def faults(self) -> list[FaultCodeField]:
+        """
+        Get the list of current fault codes.
+
+        :return: List of fault code fields.
+        :rtype: list[FaultCodeField]
+        """
         faults = []
         fault_code = int(self.get(Query.FaultCode))
-        # Skip first Enum (LASER_EMISSION_ACTIVE), which is not really a fault.
         fault_code_fields = iter(FaultCodeField)
         next(fault_code_fields)
         for index, field in enumerate(fault_code_fields):
-            if bin(fault_code)[-1] == '1':
+            if bin(fault_code)[-1] == "1":
                 faults.append(field)
             fault_code = fault_code >> 1
             return faults
 
     @property
-    def serial_number(self):
-        """Retrieves the unit’s serial number"""
+    def serial_number(self) -> str:
+        """
+        Get the laser serial number.
+
+        :return: Serial number.
+        :rtype: str
+        """
         return self.get(Query.LaserIdentification)
 
-    def get(self, msg: Query) -> str:
-        """Request a setting from the device."""
-        reply = self._send(msg.value)
+    def get(self, prefix: str, msg: Query) -> str:
+        """
+        Send a query command to the device.
+
+        :param prefix: Command prefix.
+        :type prefix: str
+        :param msg: Query message.
+        :type msg: Query
+        :return: Device reply.
+        :rtype: str
+        """
+        reply = self._send(f"{prefix}{msg.value}")
         return reply
 
+    def set(self, prefix: str, msg: Cmd, value: str | float | BoolVal) -> str:
+        """
+        Send a set command to the device.
 
-    def set(self, msg: Cmd, value) -> str:
-        return self._send(f"{msg} {value}")
-
+        :param prefix: Command prefix.
+        :type prefix: str
+        :param msg: Command message.
+        :type msg: Cmd
+        :param value: Value to set.
+        :type value: str or float or BoolVal
+        :return: Device reply.
+        :rtype: str
+        """
+        return self._send(f"{prefix}{msg} {value}")
 
     def _send(self, msg: str, raise_timeout: bool = True) -> str:
-        """send a message and return the reply.
-        :param msg: the message to send in string format
-        :param raise_timeout: bool to indicate if we should raise an exception
-            if we timed out.
-        :returns: the reply (without line formatting chars) in str format
-            or emptystring if no reply. Raises a timeout exception if flagged
-            to do so.
         """
-        # Note: Timing out on a serial port read does not throw an exception,
-        #   so we need to do this manually.
+        Send a raw message to the device and return the reply.
 
-        # All outgoing commands are bookended with a '\r\n' at the beginning
-        # and end of the message.
-        prefix_msg = f'{self.prefix}{msg}\r'
-        self.ser.write(prefix_msg.encode('ascii'))
+        :param msg: Message to send.
+        :type msg: str
+        :param raise_timeout: Whether to raise on timeout.
+        :type raise_timeout: bool, optional
+        :raises SerialTimeoutException: If no reply is received in time.
+        :return: Device reply.
+        :rtype: str
+        """
+        self.ser.write(f"{msg}\r".encode("ascii"))
         start_time = perf_counter()
-        # Read the first '\r\n'.
         reply = self.ser.read_until(REPLY_TERMINATION)
-        # Raise a timeout if we got no reply and have been flagged to do so.
-        if not len(reply) and raise_timeout and \
-                perf_counter() - start_time > self.ser.timeout:
+        if (
+            not len(reply)
+            and raise_timeout
+            and perf_counter() - start_time > self.ser.timeout
+        ):
             raise SerialTimeoutException
-        return reply.rstrip(REPLY_TERMINATION).decode('utf-8')
+        return reply.rstrip(REPLY_TERMINATION).decode("utf-8")
 
-class LCX(OxxiusLaser):
 
-    def __init__(self, port, prefix):
-        """Class for the LBX series oxxius laser"""
+class LCX(OxxiusController):
 
-        super().__init__(port, prefix)
+    def __init__(self, port: str | Serial, prefix: str):
+        """
+        Initialize the LCX laser controller.
+
+        :param port: Serial port name or Serial object.
+        :type port: str or Serial
+        :param prefix: Command prefix for this laser.
+        :type prefix: str
+        """
+        super().__init__(port)
+        self.prefix = prefix
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     @property
-    def emission_status(self):
-        """Returns if laser is on or off"""
-        return BoolVal(self.get(Query.LaserEmission))
+    def emission_status(self) -> BoolVal:
+        """
+        Get the emission status.
 
-    def enable(self):
-        """Enable emission. This opens the shutter on laser"""
-        self.set(Cmd.LaserEmission, BoolVal.ON)
+        :return: Emission status.
+        :rtype: BoolVal
+        """
+        return BoolVal(self.get(self.prefix, Query.LaserEmission))
 
-    def disable(self):
-        """disable emission. This closes shutter on laser"""
-        self.set(Cmd.LaserEmission, BoolVal.OFF)
+    def enable(self) -> None:
+        """
+        Enable laser emission.
+        """
+        self.set(self.prefix, Cmd.LaserEmission, BoolVal.ON)
+
+    def disable(self) -> None:
+        """
+        Disable laser emission.
+        """
+        self.set(self.prefix, Cmd.LaserEmission, BoolVal.OFF)
 
     @property
-    def max_power(self):
-        """Returns maximum power of laser"""
-        return self.get(Query.MaximumLaserPower)
+    def max_power(self) -> str:
+        """
+        Get the maximum laser power.
+
+        :return: Maximum laser power.
+        :rtype: str
+        """
+        return self.get(self.prefix, Query.MaximumLaserPower)
 
     @property
-    def power(self):
-        """Returns current power of laser in mW"""
-        return self.get(Query.LaserPower)
+    def power(self) -> str:
+        """
+        Get the current laser power.
 
+        :return: Current laser power.
+        :rtype: str
+        """
+        return self.get(self.prefix, Query.LaserPower)
 
     @power.setter
-    def power(self, value: float):
-        """Set laser power setpoint."""
+    def power(self, value: float) -> None:
+        """
+        Set the laser power.
 
-        self.set(Cmd.LaserPower, value)
+        :param value: Power value to set.
+        :type value: float
+        """
+        self.set(self.prefix, Cmd.LaserPower, value)
 
     @property
-    def power_setpoint(self):
-        """Return to setpoint of laser power in mW"""
-        return self.get(Query.LaserPowerSetting)
+    def power_setpoint(self) -> str:
+        """
+        Get the power setpoint.
+
+        :return: Power setpoint.
+        :rtype: str
+        """
+        return self.get(self.prefix, Query.LaserPowerSetting)
 
     @power_setpoint.setter
-    def power_setpoint(self, value: float):
-        """Set laser power setpoint."""
+    def power_setpoint(self, value: float) -> None:
+        """
+        Set the power setpoint.
+
+        :param value: Power setpoint value.
+        :type value: float
+        """
         if 0 > value > self.max_power:
-            reason = f"exceeds maximum power output {self.max_power}mW" if value > self.max_power else f"is below 0mW"
+            reason = (
+                f"exceeds maximum power output {self.max_power}mW"
+                if value > self.max_power
+                else f"is below 0mW"
+            )
             self.log.error(f"Cannot set laser to {value}ml because it {reason}")
         else:
-            self.set(Cmd.LaserPower, value)
-
-class LBX(OxxiusLaser):
-
-    def __init__(self, port, prefix):
-        """Class for the LBX series oxxius laser"""
-
-        super().__init__(port, prefix)
-        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-
-    @property
-    def cdrh(self):
-        status = self.get(Query.FiveSecEmissionDelay)
-        return BoolVal(status)
-
-    @cdrh.setter
-    def cdrh(self, status: BoolVal):
-        self.set(Cmd.FiveSecEmissionDelay, status)
-
-    @property
-    def constant_current(self):
-        """Return if constant current is on or off.
-        Note digital modulation can only be on in constant current mode"""
-        return BoolVal(self.get(Query.LaserDriverControlMode))
-
-    @constant_current.setter
-    def constant_current(self, value:BoolVal):
-        """Set constant current mode on or off"""
-
-        if value == BoolVal.OFF and self.digital_modulation == BoolVal.ON:
-            self.log.warning(f'Putting Laser {self.prefix} in constant power mode and disabling digital modulation mode')
-        self.set(Cmd.LaserDriverControlMode, value)
-
-    @property
-    def digital_modulation(self):
-        """Return if digital modulation mode is on or off"""
-        return BoolVal(self.get(Query.DigitalModulation))
-
-    @digital_modulation.setter
-    def digital_modulation(self, value: BoolVal):
-        """Set digital modulation mode.
-        Note if laser in constant power mode, digital modulation can't be turned on"""
-        if self.constant_current == BoolVal.OFF:
-            self.log.warning(f'Laser {self.prefix} is in constant power mode and cannot be put in digital modulation mode')
-        else:
-            self.set(Cmd.DigitalModulation, value)
-
-    @property
-    def external_control_mode(self):
-        """Returns external control mode/analog modulation mode"""
-        return BoolVal(self.get(Query.ExternalPowerControl))
-
-    @external_control_mode.setter
-    def external_control_mode(self, value: BoolVal):
-        """Sets external control mode/analog modulation mode"""
-        self.set(Cmd.ExternalPowerControl, value)
-
-    @property
-    def emission_status(self):
-        """Returns if laser is on or off"""
-        return BoolVal(self.get(Query.LaserEmission))
-
-    def enable(self):
-        """Enable emission."""
-        self.set(Cmd.LaserEmission, BoolVal.ON)
-
-    def disable(self):
-        """disable emission."""
-        self.set(Cmd.LaserEmission, BoolVal.OFF)
-
-    @property
-    def max_power(self):
-        """Returns maximum power of laser"""
-        return self.get(Query.MaximumLaserPower)
-
-    @property
-    def power(self):
-        """Returns current power of laser in mW"""
-        return self.get(Query.LaserPower)
-
-    @property
-    def power_setpoint(self):
-        """Return to setpoint of laser power in mW"""
-        return self.get(Query.LaserPowerSetting)
-
-    @power_setpoint.setter
-    def power_setpoint(self, value:float):
-        """Set laser power setpoint. Note, if laser in constant current mode this won't change intensity"""
-        if 0 > value > self.max_power:
-            reason = f"exceeds maximum power output {self.max_power}mW" if value > self.max_power else f"is below 0mW"
-            self.log.error(f"Cannot set laser to {value}ml because it {reason}")
-        else:
-            if self.constant_current == BoolVal.ON:
-                self.log.warning("Laser is in constant current mode so changing power will not change intensity")
-            self.set(Cmd.LaserPower, value)
-
-    @property
-    def max_current(self):
-        """Returns maximum power of laser"""
-        return self.get(Query.MaximumLaserCurrent)
-
-    @property
-    def current(self):
-        """Returns current power of laser in mA"""
-        return self.get(Query.LaserPower)
-
-    @property
-    def current_setpoint(self):
-        """Return to setpoint of laser current in mA. This is a percentage of current"""
-        return self.get(Query.LaserCurrentSetting)
-
-    @current_setpoint.setter
-    def current_setpoint(self, value: float):
-        """Set laser current setpoint as a percent. Note, if laser in constant power mode this won't change intensity"""
-        if 0 > value > 100:
-            reason = f"exceeds 100%" if value > self.max_power else f"is below 0%"
-            self.log.error(f"Cannot set laser to {value}ml because it {reason}")
-        else:
-            if self.constant_current == BoolVal.OFF:
-                self.log.warning("Laser is in constant power mode so changing power will not change intensity")
-            self.set(Cmd.LaserCurrent, value)
+            self.set(self.prefix, Cmd.LaserPower, value)
 
 
+class LBX(OxxiusController):
 
-class L6CCCombiner(OxxiusLaser):
+    def __init__(self, port: str | Serial, prefix: str):
+        """
+        Initialize the LBX laser controller.
 
-
-    def __init__(self, port):
-        """Class for the L6CC oxxius combiner. This combiner can have LBX lasers or LCX"""
-
+        :param port: Serial port name or Serial object.
+        :type port: str or Serial
+        :param prefix: Command prefix for this laser.
+        :type prefix: str
+        """
         super().__init__(port)
+        self.prefix = prefix
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    @property
-    def percentage_split(self):
-        """Set percentage split of lasers"""
-
-        return self.get(Query.PercentageSplitStatus)
-
-
-    @percentage_split.setter
-    def percentage_split(self, value):
-        """Get percentage split of lasers"""
-        if value > 100 or value < 0:
-            self.log.error(f'Impossible to set percentage spilt to {value}')
-            return
-        self.set(Cmd.PercentageSplit, value)
-
-    @property
-    def port_configuration(self):
-        """Retrieves the configuration of the USB port """
-        configuration = self.get(Query.USBConfiguration)
-        return OxxiusUSBConfiguration(configuration)
-
-    @property
-    def cdrh(self):
-        status = self.get(Query.FiveSecEmissionDelay)
-        return BoolVal(status)
-
-    @cdrh.setter
-    def cdrh(self, status:BoolVal):
-        self.set(Cmd.FiveSecEmissionDelay, status)
-
-    @property
-    def laser_type(self):
-        """Retrieves the type of laser"""
-        return self.get(Query.LaserType)
-
-    @property
-    def interlock_status(self):
-        """Retrieves the status of the interlock circuit"""
-        return BoolVal(self.get(Query.InterlockStatus))
-
-    @property
-    def emmision_key_status(self):
-        """Retrieves the status of the emission key,
-            or the “Key” signal on the DE-15
-            electrical interface
+        @property
+        def cdrh(self) -> BoolVal:
             """
-        return BoolVal(self.get(Query.EmmissionKeyStatus))
+            Get the status of the 5-second CDRH emission delay.
+
+            :return: CDRH emission delay status.
+            :rtype: BoolVal
+            """
+            status = self.get(self.prefix, Query.FiveSecEmissionDelay)
+            return BoolVal(status)
+
+        @cdrh.setter
+        def cdrh(self, status: BoolVal) -> None:
+            """
+            Set the status of the 5-second CDRH emission delay.
+
+            :param status: Desired CDRH emission delay status.
+            :type status: BoolVal
+            """
+            self.set(self.prefix, Cmd.FiveSecEmissionDelay, status)
+
+        @property
+        def constant_current(self) -> BoolVal:
+            """
+            Get the constant current mode status.
+
+            :return: Constant current mode status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.LaserDriverControlMode))
+
+        @constant_current.setter
+        def constant_current(self, value: BoolVal) -> None:
+            """
+            Set the constant current mode status.
+
+            :param value: Desired constant current mode status.
+            :type value: BoolVal
+            """
+            if value == BoolVal.OFF and self.digital_modulation == BoolVal.ON:
+                self.log.warning(
+                    f"Putting Laser {self.prefix} in constant power mode and disabling digital modulation mode"
+                )
+            self.set(self.prefix, Cmd.LaserDriverControlMode, value)
+
+        @property
+        def digital_modulation(self) -> BoolVal:
+            """
+            Get the digital modulation mode status.
+
+            :return: Digital modulation mode status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.DigitalModulation))
+
+        @digital_modulation.setter
+        def digital_modulation(self, value: BoolVal) -> None:
+            """
+            Set the digital modulation mode status.
+
+            :param value: Desired digital modulation mode status.
+            :type value: BoolVal
+            """
+            # Note if laser in constant power mode, digital modulation can't be turned on
+            if self.constant_current == BoolVal.OFF:
+                self.log.warning(
+                    f"Laser {self.prefix} is in constant power mode and cannot be put in digital modulation mode"
+                )
+            else:
+                self.set(self.prefix, Cmd.DigitalModulation, value)
+
+        @property
+        def external_control_mode(self) -> BoolVal:
+            """
+            Get the external power control mode status.
+
+            :return: External power control mode status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.ExternalPowerControl))
+
+        @external_control_mode.setter
+        def external_control_mode(self, value: BoolVal) -> None:
+            """
+            Set the external power control mode status.
+
+            :param value: Desired external power control mode status.
+            :type value: BoolVal
+            """
+            self.set(self.prefix, Cmd.ExternalPowerControl, value)
+
+        @property
+        def emission_status(self) -> BoolVal:
+            """
+            Get the laser emission status.
+
+            :return: Laser emission status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.LaserEmission))
+
+        def enable(self) -> None:
+            """
+            Enable laser emission.
+            """
+            self.set(self.prefix, Cmd.LaserEmission, BoolVal.ON)
+
+        def disable(self) -> None:
+            """
+            Disable laser emission.
+            """
+            self.set(self.prefix, Cmd.LaserEmission, BoolVal.OFF)
+
+        @property
+        def max_power(self) -> str:
+            """
+            Get the maximum laser power.
+
+            :return: Maximum laser power.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.MaximumLaserPower)
+
+        @property
+        def power(self) -> str:
+            """
+            Get the current laser power.
+
+            :return: Current laser power.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.LaserPower)
+
+        @property
+        def power_setpoint(self) -> str:
+            """
+            Get the power setpoint.
+
+            :return: Power setpoint.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.LaserPowerSetting)
+
+        @power_setpoint.setter
+        def power_setpoint(self, value: float) -> None:
+            """
+            Set the power setpoint.
+
+            :param value: Desired power setpoint.
+            :type value: float
+            """
+            if 0 > value > self.max_power:
+                reason = (
+                    f"exceeds maximum power output {self.max_power}mW"
+                    if value > self.max_power
+                    else f"is below 0mW"
+                )
+                self.log.error(f"Cannot set laser to {value}ml because it {reason}")
+            else:
+                if self.constant_current == BoolVal.ON:
+                    self.log.warning(
+                        "Laser is in constant current mode so changing power will not change intensity"
+                    )
+                self.set(self.prefix, Cmd.LaserPower, value)
+
+        @property
+        def max_current(self) -> str:
+            """
+            Get the maximum laser current.
+
+            :return: Maximum laser current.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.MaximumLaserCurrent)
+
+        @property
+        def current(self) -> str:
+            """
+            Get the current laser current.
+
+            :return: Current laser current.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.LaserPower)
+
+        @property
+        def current_setpoint(self) -> str:
+            """
+            Get the current setpoint for laser current.
+
+            :return: Current setpoint.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.LaserCurrentSetting)
+
+        @current_setpoint.setter
+        def current_setpoint(self, value: float) -> None:
+            """
+            Set the current setpoint for laser current.
+
+            :param value: Desired current setpoint.
+            :type value: float
+            """
+            if 0 > value > 100:
+                reason = "exceeds 100%" if value > self.max_power else f"is below 0%"
+                self.log.error(f"Cannot set laser to {value}ml because it {reason}")
+            else:
+                if self.constant_current == BoolVal.OFF:
+                    self.log.warning(
+                        "Laser is in constant power mode so changing power will not change intensity"
+                    )
+                self.set(self.prefix, Cmd.LaserCurrent, value)
+
+    class L6CCCombiner(OxxiusController):
+
+        def __init__(self, port: str):
+            """
+            Initialize the L6CCCombiner.
+
+            :param port: Serial port name or Serial object.
+            :type port: str
+            """
+            super().__init__(port)
+            self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+        @property
+        def percentage_split(self) -> str:
+            """
+            Get the percentage split between lasers.
+
+            :return: Percentage split.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.PercentageSplitStatus)
+
+        @percentage_split.setter
+        def percentage_split(self, value: float) -> None:
+            """
+            Set the percentage split between lasers.
+
+            :param value: Desired percentage split (0-100).
+            :type value: float
+            """
+            if value > 100 or value < 0:
+                self.log.error(f"Impossible to set percentage spilt to {value}")
+                return
+            self.set(self.prefix, Cmd.PercentageSplit, value)
+
+        @property
+        def port_configuration(self) -> OxxiusUSBConfiguration:
+            """
+            Get the USB port configuration.
+
+            :return: USB port configuration.
+            :rtype: OxxiusUSBConfiguration
+            """
+            configuration = self.get(self.prefix, Query.USBConfiguration)
+            return OxxiusUSBConfiguration(configuration)
+
+        @property
+        def cdrh(self) -> BoolVal:
+            """
+            Get the status of the 5-second CDRH emission delay.
+
+            :return: CDRH emission delay status.
+            :rtype: BoolVal
+            """
+            status = self.get(self.prefix, Query.FiveSecEmissionDelay)
+            return BoolVal(status)
+
+        @cdrh.setter
+        def cdrh(self, status: BoolVal) -> None:
+            """
+            Set the status of the 5-second CDRH emission delay.
+
+            :param status: Desired CDRH emission delay status.
+            :type status: BoolVal
+            """
+            self.set(self.prefix, Cmd.FiveSecEmissionDelay, status)
+
+        @property
+        def laser_type(self) -> str:
+            """
+            Get the laser type.
+
+            :return: Laser type.
+            :rtype: str
+            """
+            return self.get(self.prefix, Query.LaserType)
+
+        @property
+        def interlock_status(self) -> BoolVal:
+            """
+            Get the interlock status.
+
+            :return: Interlock status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.InterlockStatus))
+
+        @property
+        def emmision_key_status(self) -> BoolVal:
+            """
+            Get the emission key status.
+
+            :return: Emission key status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.EmmissionKeyStatus))
+
+        @property
+        def LBX_constant_current_status(self) -> BoolVal:
+            """
+            Get the constant current status for LBX.
+
+            :return: Constant current status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(self.prefix, Query.LaserDriverControlMode))
+
+        @LBX_constant_current_status.setter
+        def LBX_constant_current_status(self, status: BoolVal) -> None:
+            """
+            Set the constant current status for LBX.
+
+            :param status: Desired constant current status.
+            :type status: BoolVal
+            """
+            self.set(self.prefix, Cmd.LaserDriverControlMode, status)
+
+        def digital_modualtion(self, prefix: str) -> BoolVal:
+            """
+            Get the digital modulation status for a given prefix.
+
+            :param prefix: Command prefix for the laser.
+            :type prefix: str
+            :return: Digital modulation status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(prefix, Query.DigitalModulation))
+
+        def set_digital_modulation(self, prefix: str, value: BoolVal) -> None:
+            """
+            Set the digital modulation status for a given prefix.
+
+            :param prefix: Command prefix for the laser.
+            :type prefix: str
+            :param value: Desired digital modulation status.
+            :type value: BoolVal
+            """
+            # If laser is in constant power mode, then digital modulation can't be turned on
+            if self.get(prefix, Query.LaserDriverControlMode) == BoolVal.OFF:
+                self.log.warning(
+                    f"Laser {prefix} is in constant power mode and cannot be put in digital modulation mode"
+                )
+            else:
+                self.set(Cmd.DigitalModulation + prefix, value)
+
+        def external_control_mode(self, prefix: str) -> BoolVal:
+            """
+            Get the external power control mode status for a given prefix.
+
+            :param prefix: Command prefix for the laser.
+            :type prefix: str
+            :return: External power control mode status.
+            :rtype: BoolVal
+            """
+            return BoolVal(self.get(prefix, Query.ExternalPowerControl))
+
+        def set_external_control_mode(self, prefix: str, value: BoolVal) -> None:
+            """
+            Set the external power control mode status for a given prefix.
+
+            :param prefix: Command prefix for the laser.
+            :type prefix: str
+            :param value: Desired external power control mode status.
+            :type value: BoolVal
+            """
+            self.set(prefix, Cmd.ExternalPowerControl, value)
 
     @property
-    def LBX_constant_current_status(self):
-        """Retrieves the status of automatic constant current for all LBX lasers.
-         Only one LBX needs to be in constant power to return OFF"""
-        return BoolVal(self.get(Query.LaserDriverControlMode))
+    def emmision_key_status(self) -> BoolVal:
+        """
+        Get the emission key status.
+
+        :return: Emission key status.
+        :rtype: BoolVal
+        """
+        return BoolVal(self.get(self.prefix, Query.EmmissionKeyStatus))
+
+    @property
+    def LBX_constant_current_status(self) -> BoolVal:
+        """
+        Get the constant current status for LBX.
+
+        :return: Constant current status.
+        :rtype: BoolVal
+        """
+        return BoolVal(self.get(self.prefix, Query.LaserDriverControlMode))
 
     @LBX_constant_current_status.setter
-    def LBX_constant_current_status(self, status:BoolVal):
-        """Set all LBX lasers to constant current mode (ON) or constant power mode (OFF).
-        If any LBX lasers are in digital modulation mode, it will be disabled when set to constant power"""
-        self.set(Cmd.LaserDriverControlMode, status)
+    def LBX_constant_current_status(self, status: BoolVal) -> None:
+        """
+        Set the constant current status for LBX.
 
-    def digital_modualtion(self, prefix:str):
-        """Returns digital modulation mode of specific laser in box"""
-        return BoolVal(self.get(Query.DigitalModulation+prefix))
+        :param status: Desired constant current status.
+        :type status: BoolVal
+        """
+        self.set(self.prefix, Cmd.LaserDriverControlMode, status)
 
-    def set_digital_modulation(self, prefix:str, value: BoolVal):
-        """sets digital modulation mode of specific laser in box"""
+    def digital_modualtion(self, prefix: str) -> BoolVal:
+        """
+        Get the digital modulation status for a given prefix.
+
+        :param prefix: Command prefix for the laser.
+        :type prefix: str
+        :return: Digital modulation status.
+        :rtype: BoolVal
+        """
+        return BoolVal(self.get(prefix, Query.DigitalModulation))
+
+    def set_digital_modulation(self, prefix: str, value: BoolVal) -> None:
+        """
+        Set the digital modulation status for a given prefix.
+
+        :param prefix: Command prefix for the laser.
+        :type prefix: str
+        :param value: Desired digital modulation status.
+        :type value: BoolVal
+        """
         # If laser is in constant power mode, then digital modulation can't be turned on
-        if self.get(f"L{prefix} "+Query.LaserDriverControlMode) == BoolVal.OFF:
-            self.log.warning(f'Laser {prefix} is in constant power mode and cannot be put in digital modulation mode')
+        if self.get(prefix, Query.LaserDriverControlMode) == BoolVal.OFF:
+            self.log.warning(
+                f"Laser {prefix} is in constant power mode and cannot be put in digital modulation mode"
+            )
         else:
-            self.set(Cmd.DigitalModulation+prefix, value)
+            self.set(Cmd.DigitalModulation + prefix, value)
 
-    def external_control_mode(self, prefix:str):
-        """Returns external control mode/analog modulation mode of specific laser in box"""
-        return BoolVal(self.get(Query.ExternalPowerControl+prefix))
+    def external_control_mode(self, prefix: str) -> BoolVal:
+        """
+        Get the external power control mode status for a given prefix.
 
-    def set_external_control_mode(self, prefix:str, value: BoolVal):
-        """Sets external control mode/analog modulation mode of specific laser in box"""
-        self.set(Cmd.ExternalPowerControl+prefix, value)
+        :param prefix: Command prefix for the laser.
+        :type prefix: str
+        :return: External power control mode status.
+        :rtype: BoolVal
+        """
+        return BoolVal(self.get(prefix, Query.ExternalPowerControl))
+
+    def set_external_control_mode(self, prefix: str, value: BoolVal) -> None:
+        """
+        Set the external power control mode status for a given prefix.
+
+        :param prefix: Command prefix for the laser.
+        :type prefix: str
+        :param value: Desired external power control mode status.
+        :type value: BoolVal
+        """
+        self.set(prefix, Cmd.ExternalPowerControl, value)
