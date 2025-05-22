@@ -175,8 +175,7 @@ class OxxiusController:
         :return: Device reply.
         :rtype: str
         """
-        print(f"{prefix}{msg} {value}")
-        return self._send(f"{prefix}{msg} {value}")
+        return self._send(f"{prefix} {msg} {value}")
 
     def _send(self, msg: str, raise_timeout: bool = True) -> str:
         """
