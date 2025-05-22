@@ -109,11 +109,6 @@ class OxxiusController:
         """
         self.ser = Serial(port, **OXXIUS_COM_SETUP) if type(port) != Serial else port
         self.ser.reset_input_buffer()
-        try:
-            self.get(Query.LaserCurrent)
-        except SerialTimeoutException:
-            print(f"Connected to '{self.ser.port}' but the device is not responding.")
-            raise
 
     @property
     def temperature(self) -> str:
@@ -164,7 +159,7 @@ class OxxiusController:
         :return: Device reply.
         :rtype: str
         """
-        reply = self._send(f"{prefix}{msg.value}")
+        reply = self._send(f"{prefix} {msg.value}")
         return reply
 
     def set(self, prefix: str, msg: Cmd, value: str | float | BoolVal) -> str:
@@ -180,6 +175,7 @@ class OxxiusController:
         :return: Device reply.
         :rtype: str
         """
+        print(f"{prefix}{msg} {value}")
         return self._send(f"{prefix}{msg} {value}")
 
     def _send(self, msg: str, raise_timeout: bool = True) -> str:
